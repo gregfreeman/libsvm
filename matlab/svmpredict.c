@@ -36,128 +36,90 @@ void read_sparse_instance(const mxArray *prhs, int index, struct svm_node *x)
 	x[j].index = -1;
 }
 
-static void fake_answer(mxArray *plhs[])
+static void fake_answer(int nlhs, mxArray *plhs[])
 {
 	plhs[0] = mxCreateDoubleMatrix(0, 0, mxREAL);
-	plhs[1] = mxCreateDoubleMatrix(0, 0, mxREAL);
-	plhs[2] = mxCreateDoubleMatrix(0, 0, mxREAL);
+    if(nlhs>0) {
+        plhs[1] = mxCreateDoubleMatrix(0, 0, mxREAL);
+    }
+    if(nlhs>1) {
+        plhs[2] = mxCreateDoubleMatrix(0, 0, mxREAL);
+    }
 }
 
-void predict(mxArray *plhs[], const mxArray *prhs[], struct svm_model *model, const int predict_probability)
+// void predict(mxArray *plhs[], const mxArray *prhs[], struct svm_model *model, const int predict_probability)
+void predict(mxArray **pppredictLabels, mxArray **ppOutputMat,const mxArray *instanceMatrix, const struct svm_model *model,bool probOutput)
 {
-	int label_vector_row_num, label_vector_col_num;
 	int feature_number, testing_instance_number;
 	int instance_index;
-	double *ptr_instance, *ptr_label, *ptr_predict_label; 
-	double *ptr_prob_estimates, *ptr_dec_values, *ptr;
+	double *ptr_instance, *ptr_predict_label;
+	double *ptr_output;
+//    double *ptr;
 	struct svm_node *x;
-	mxArray *pplhs[1]; // transposed instance sparse matrix
-
-	int correct = 0;
-	int total = 0;
-	double error = 0;
-	double sump = 0, sumt = 0, sumpp = 0, sumtt = 0, sumpt = 0;
 
 	int svm_type=svm_get_svm_type(model);
 	int nr_class=svm_get_nr_class(model);
 	double *prob_estimates=NULL;
 
-	// prhs[1] = testing instance matrix
-	feature_number = (int)mxGetN(prhs[1]);
-	testing_instance_number = (int)mxGetM(prhs[1]);
-	label_vector_row_num = (int)mxGetM(prhs[0]);
-	label_vector_col_num = (int)mxGetN(prhs[0]);
+	feature_number = (int)mxGetN(instanceMatrix);
+	testing_instance_number = (int)mxGetM(instanceMatrix);
 
-	if(label_vector_row_num!=testing_instance_number)
-	{
-		mexPrintf("Length of label vector does not match # of instances.\n");
-		fake_answer(plhs);
-		return;
-	}
-	if(label_vector_col_num!=1)
-	{
-		mexPrintf("label (1st argument) should be a vector (# of column is 1).\n");
-		fake_answer(plhs);
-		return;
-	}
+	ptr_instance = mxGetPr(instanceMatrix);
 
-	ptr_instance = mxGetPr(prhs[1]);
-	ptr_label    = mxGetPr(prhs[0]);
 
-	// transpose instance matrix
-	if(mxIsSparse(prhs[1]))
-	{
-		if(model->param.kernel_type == PRECOMPUTED)
-		{
-			// precomputed kernel requires dense matrix, so we make one
-			mxArray *rhs[1], *lhs[1];
-			rhs[0] = mxDuplicateArray(prhs[1]);
-			if(mexCallMATLAB(1, lhs, 1, rhs, "full"))
-			{
-				mexPrintf("Error: cannot full testing instance matrix\n");
-				fake_answer(plhs);
-				return;
-			}
-			ptr_instance = mxGetPr(lhs[0]);
-			mxDestroyArray(rhs[0]);
-		}
-		else
-		{
-			mxArray *pprhs[1];
-			pprhs[0] = mxDuplicateArray(prhs[1]);
-			if(mexCallMATLAB(1, pplhs, 1, pprhs, "transpose"))
-			{
-				mexPrintf("Error: cannot transpose testing instance matrix\n");
-				fake_answer(plhs);
-				return;
-			}
-		}
-	}
 
-	if(predict_probability)
+	if(probOutput)
 	{
-		if(svm_type==NU_SVR || svm_type==EPSILON_SVR)
-			mexPrintf("Prob. model for test data: target value = predicted value + z,\nz: Laplace distribution e^(-|z|/sigma)/(2sigma),sigma=%g\n",svm_get_svr_probability(model));
-		else
+		if(svm_type==NU_SVR || svm_type==EPSILON_SVR) {
+			//mexPrintf("Prob. model for test data: target value = predicted value + z,\nz: Laplace distribution e^(-|z|/sigma)/(2sigma),sigma=%g\n",svm_get_svr_probability(model));
+        } else {
 			prob_estimates = (double *) malloc(nr_class*sizeof(double));
+        }
 	}
 
-	plhs[0] = mxCreateDoubleMatrix(testing_instance_number, 1, mxREAL);
-	if(predict_probability)
-	{
-		// prob estimates are in plhs[2]
-		if(svm_type==C_SVC || svm_type==NU_SVC)
-			plhs[2] = mxCreateDoubleMatrix(testing_instance_number, nr_class, mxREAL);
-		else
-			plhs[2] = mxCreateDoubleMatrix(0, 0, mxREAL);
-	}
-	else
-	{
-		// decision values are in plhs[2]
-		if(svm_type == ONE_CLASS ||
-		   svm_type == EPSILON_SVR ||
-		   svm_type == NU_SVR ||
-		   nr_class == 1) // if only one class in training data, decision values are still returned.
-			plhs[2] = mxCreateDoubleMatrix(testing_instance_number, 1, mxREAL);
-		else
-			plhs[2] = mxCreateDoubleMatrix(testing_instance_number, nr_class*(nr_class-1)/2, mxREAL);
-	}
+	*pppredictLabels = mxCreateDoubleMatrix(testing_instance_number, 1, mxREAL);
+    if(ppOutputMat)
+    {
+        if(probOutput)
+        {
+            // prob estimates are in plhs[1]
+            if(svm_type==C_SVC || svm_type==NU_SVC) {
+                *ppOutputMat = mxCreateDoubleMatrix(testing_instance_number, nr_class, mxREAL);
+            } else {
+                *ppOutputMat = mxCreateDoubleMatrix(0, 0, mxREAL);
+            }
+        }
+        else
+        {
+            // decision values are in plhs[1]
+            if(svm_type == ONE_CLASS ||
+               svm_type == EPSILON_SVR ||
+               svm_type == NU_SVR ||
+               nr_class == 1) // if only one class in training data, decision values are still returned.
+            {
+                *ppOutputMat = mxCreateDoubleMatrix(testing_instance_number, 1, mxREAL);
+            } else {
+                *ppOutputMat = mxCreateDoubleMatrix(testing_instance_number, nr_class*(nr_class-1)/2, mxREAL);
+            }
+        }
+    }
+	ptr_predict_label = mxGetPr(*pppredictLabels);
+    ptr_output =NULL;
+    if(ppOutputMat) {
+    	ptr_output = mxGetPr(*ppOutputMat);
+    }
 
-	ptr_predict_label = mxGetPr(plhs[0]);
-	ptr_prob_estimates = mxGetPr(plhs[2]);
-	ptr_dec_values = mxGetPr(plhs[2]);
 	x = (struct svm_node*)malloc((feature_number+1)*sizeof(struct svm_node) );
+    
 	for(instance_index=0;instance_index<testing_instance_number;instance_index++)
 	{
 		int i;
-		double target_label, predict_label;
+		double predict_label;
 
-		target_label = ptr_label[instance_index];
-
-		if(mxIsSparse(prhs[1]) && model->param.kernel_type != PRECOMPUTED) // prhs[1]^T is still sparse
-			read_sparse_instance(pplhs[0], instance_index, x);
-		else
-		{
+		if(mxIsSparse(instanceMatrix) && model->param.kernel_type != PRECOMPUTED) // instanceMatrix^T is still sparse
+        {
+			read_sparse_instance(instanceMatrix, instance_index, x);
+        } else {
 			for(i=0;i<feature_number;i++)
 			{
 				x[i].index = i+1;
@@ -166,72 +128,47 @@ void predict(mxArray *plhs[], const mxArray *prhs[], struct svm_model *model, co
 			x[feature_number].index = -1;
 		}
 
-		if(predict_probability)
-		{
+		if(probOutput)
+        {
 			if(svm_type==C_SVC || svm_type==NU_SVC)
 			{
 				predict_label = svm_predict_probability(model, x, prob_estimates);
 				ptr_predict_label[instance_index] = predict_label;
-				for(i=0;i<nr_class;i++)
-					ptr_prob_estimates[instance_index + i * testing_instance_number] = prob_estimates[i];
+                if(ptr_output) {
+                    for(i=0;i<nr_class;i++) {
+                        ptr_output[instance_index + i * testing_instance_number] = prob_estimates[i];
+                    }
+                }
 			} else {
 				predict_label = svm_predict(model,x);
 				ptr_predict_label[instance_index] = predict_label;
 			}
-		}
-		else
-		{
+		} else {
 			if(svm_type == ONE_CLASS ||
 			   svm_type == EPSILON_SVR ||
 			   svm_type == NU_SVR)
 			{
 				double res;
 				predict_label = svm_predict_values(model, x, &res);
-				ptr_dec_values[instance_index] = res;
-			}
-			else
-			{
+                if(ptr_output) ptr_output[instance_index] = res;
+			} else {
 				double *dec_values = (double *) malloc(sizeof(double) * nr_class*(nr_class-1)/2);
 				predict_label = svm_predict_values(model, x, dec_values);
-				if(nr_class == 1) 
-					ptr_dec_values[instance_index] = 1;
-				else
-					for(i=0;i<(nr_class*(nr_class-1))/2;i++)
-						ptr_dec_values[instance_index + i * testing_instance_number] = dec_values[i];
+                if(ptr_output) {
+                    if(nr_class == 1)  {
+                        ptr_output[instance_index] = 1;
+                    } else {
+                        for(i=0;i<(nr_class*(nr_class-1))/2;i++) {
+                            ptr_output[instance_index + i * testing_instance_number] = dec_values[i];
+                        }
+                    }
+                }
 				free(dec_values);
 			}
 			ptr_predict_label[instance_index] = predict_label;
 		}
 
-		if(predict_label == target_label)
-			++correct;
-		error += (predict_label-target_label)*(predict_label-target_label);
-		sump += predict_label;
-		sumt += target_label;
-		sumpp += predict_label*predict_label;
-		sumtt += target_label*target_label;
-		sumpt += predict_label*target_label;
-		++total;
 	}
-	if(svm_type==NU_SVR || svm_type==EPSILON_SVR)
-	{
-		mexPrintf("Mean squared error = %g (regression)\n",error/total);
-		mexPrintf("Squared correlation coefficient = %g (regression)\n",
-			((total*sumpt-sump*sumt)*(total*sumpt-sump*sumt))/
-			((total*sumpp-sump*sump)*(total*sumtt-sumt*sumt))
-			);
-	}
-	else
-		mexPrintf("Accuracy = %g%% (%d/%d) (classification)\n",
-			(double)correct/total*100,correct,total);
-
-	// return accuracy, mean squared error, squared correlation coefficient
-	plhs[1] = mxCreateDoubleMatrix(3, 1, mxREAL);
-	ptr = mxGetPr(plhs[1]);
-	ptr[0] = (double)correct/total*100;
-	ptr[1] = error/total;
-	ptr[2] = ((total*sumpt-sump*sumt)*(total*sumpt-sump*sumt))/
-				((total*sumpp-sump*sump)*(total*sumtt-sumt*sumt));
 
 	free(x);
 	if(prob_estimates != NULL)
@@ -241,109 +178,156 @@ void predict(mxArray *plhs[], const mxArray *prhs[], struct svm_model *model, co
 void exit_with_help()
 {
 	mexPrintf(
-		"Usage: [predicted_label, accuracy, decision_values/prob_estimates] = svmpredict(testing_label_vector, testing_instance_matrix, model, 'libsvm_options')\n"
+		"Usage: [predicted_label, decision_values,prob_estimates] = svmpredict(instanceMatrix, model, options)\n"
 		"Parameters:\n"
-		"  model: SVM model structure from svmtrain.\n"
-		"  libsvm_options:\n"
-		"    -b probability_estimates: whether to predict probability estimates, 0 or 1 (default 0); one-class SVM not supported yet\n"
+		"  instanceMatrix: matrix of instances to test.\n"
+		"  model: SVM model structure from svmtrain or libsvmreadmodel.\n"
+		"  options: structure \n"
+		"      output: {'probability', 'decision'} \n"
+		"         default: 'decision'\n"
 		"Returns:\n"
 		"  predicted_label: SVM prediction output vector.\n"
-		"  accuracy: a vector with accuracy, mean squared error, squared correlation coefficient.\n"
-		"  prob_estimates: If selected, probability estimate vector.\n"
+		"  prob_estimates: one-class SVM not supported yet\n"
+        "    If selected, probability estimate vector.\n"
 	);
 }
 
 void mexFunction( int nlhs, mxArray *plhs[],
 		 int nrhs, const mxArray *prhs[] )
 {
-	int prob_estimate_flag = 0;
+	int probEstimateFlag = 0;
+	int output2 = 0;
 	struct svm_model *model;
+    const mxArray * instanceMatrix;
+    mxArray ** predictLabels;
+    mxArray ** outputMat;
+    const char * error_msg;    
 
-	if(nrhs > 4 || nrhs < 3)
+	if(nrhs< 2 || nrhs>3)
 	{
 		exit_with_help();
-		fake_answer(plhs);
+		fake_answer(nlhs,plhs);
 		return;
 	}
 
-	if(!mxIsDouble(prhs[0]) || !mxIsDouble(prhs[1])) {
-		mexPrintf("Error: label vector and instance matrix must be double\n");
-		fake_answer(plhs);
-		return;
-	}
-
-	if(mxIsStruct(prhs[2]))
+	if(nlhs <1 || nlhs >2)
 	{
-		const char *error_msg;
+		exit_with_help();
+		fake_answer(nlhs,plhs);
+		return;
+	}
 
-		// parse options
-		if(nrhs==4)
+	if(!mxIsDouble(prhs[0])) {
+		mexPrintf("Error: instance matrix must be double\n");
+		fake_answer(nlhs,plhs);
+		return;
+	}
+
+    if(!mxIsStruct(prhs[1])) {
+		mexPrintf("Error: model must be a struct\n");
+		fake_answer(nlhs,plhs);
+		return;
+	}
+	if(nrhs==3 && !mxIsStruct(prhs[2]))
+	{
+        mexPrintf("Error: options must be a struct\n");
+		fake_answer(nlhs,plhs);
+		return;
+	}
+	if(nrhs==3 && mxGetField(prhs[2],0,"output")!=NULL )
+	{
+        mxArray * field=mxGetField(prhs[2],0,"output");
+        if(field) 
+        {
+            char value[1024];
+            int rtn;
+            rtn=mxGetString(field, value, 1024);
+            if(0==_strcmpi(value,"probability")) {
+               probEstimateFlag=1;     
+            } else if(0==_strcmpi(value,"decision")) {
+               probEstimateFlag=0;     
+            } else {
+                mexPrintf("Error: invalid output option.  'probability' or 'decision'\n");
+                fake_answer(nlhs,plhs);
+                return;
+            }
+        }
+    }
+    // preprocess instance matrix, make full transpose
+
+    instanceMatrix=prhs[0];
+    // transpose instance matrix if sparse
+    //mexPrintf("Input parsed\n");
+
+	if(mxIsSparse(instanceMatrix))
+	{
+        mxArray * instanceMatrix_t;
+        //mexPrintf("sparse input\n");
+		if(model->param.kernel_type == PRECOMPUTED)
 		{
-			int i, argc = 1;
-			char cmd[CMD_LEN], *argv[CMD_LEN/2];
-
-			// put options in argv[]
-			mxGetString(prhs[3], cmd,  mxGetN(prhs[3]) + 1);
-			if((argv[argc] = strtok(cmd, " ")) != NULL)
-				while((argv[++argc] = strtok(NULL, " ")) != NULL)
-					;
-
-			for(i=1;i<argc;i++)
+			// precomputed kernel requires dense matrix, so we make one
+			mxArray *temp;
+			temp = mxDuplicateArray(instanceMatrix);
+			if(mexCallMATLAB(1, &instanceMatrix_t, 1, &temp, "full"))
 			{
-				if(argv[i][0] != '-') break;
-				if(++i>=argc)
-				{
-					exit_with_help();
-					fake_answer(plhs);
-					return;
-				}
-				switch(argv[i-1][1])
-				{
-					case 'b':
-						prob_estimate_flag = atoi(argv[i]);
-						break;
-					default:
-						mexPrintf("Unknown option: -%c\n", argv[i-1][1]);
-						exit_with_help();
-						fake_answer(plhs);
-						return;
-				}
-			}
-		}
-
-		model = matlab_matrix_to_model(prhs[2], &error_msg);
-		if (model == NULL)
-		{
-			mexPrintf("Error: can't read model: %s\n", error_msg);
-			fake_answer(plhs);
-			return;
-		}
-
-		if(prob_estimate_flag)
-		{
-			if(svm_check_probability_model(model)==0)
-			{
-				mexPrintf("Model does not support probabiliy estimates\n");
-				fake_answer(plhs);
-				svm_free_and_destroy_model(&model);
+				mexPrintf("Error: cannot full testing instance matrix\n");
+				fake_answer(nlhs,plhs);
+                mxDestroyArray(temp);
 				return;
 			}
+			mxDestroyArray(temp);
 		}
 		else
 		{
-			if(svm_check_probability_model(model)!=0)
-				mexPrintf("Model supports probability estimates, but disabled in predicton.\n");
+			mxArray *temp;
+			temp = mxDuplicateArray(instanceMatrix);
+			if(mexCallMATLAB(1, &instanceMatrix_t, 1, &temp, "transpose"))
+			{
+				mexPrintf("Error: cannot transpose testing instance matrix\n");
+				fake_answer(nlhs,plhs);
+                mxDestroyArray(temp);
+				return;
+			}
 		}
+        instanceMatrix=(const mxArray*)instanceMatrix_t;
+	}
 
-		predict(plhs, prhs, model, prob_estimate_flag);
-		// destroy model
-		svm_free_and_destroy_model(&model);
-	}
-	else
+
+    model = matlab_matrix_to_model(prhs[1], &error_msg);
+	if (model == NULL)
 	{
-		mexPrintf("model file should be a struct array\n");
-		fake_answer(plhs);
-	}
+        mexPrintf("Error: can't read model: %s\n", error_msg);
+        fake_answer(nlhs,plhs);
+        return;
+    }
+
+    // optional output
+    output2 = nlhs>1;
+
+    if(probEstimateFlag)
+    {
+        if(svm_check_probability_model(model)==0)
+        {
+            mexPrintf("Model does not support probabiliy estimates\n");
+//             plhs[1] = mxCreateDoubleMatrix(0, 0, mxREAL);
+            probEstimateFlag=0;
+        }
+    }
+
+
+    predictLabels=&plhs[0];
+    outputMat=NULL;
+    if(nlhs > 1) {
+       outputMat=&plhs[1];
+    }
+
+	predict(predictLabels, outputMat, instanceMatrix, model,probEstimateFlag);
+		// destroy model
+    svm_free_and_destroy_model(&model);
+    if(instanceMatrix!=prhs[0]) // destroy if created instanceMatrix transpose
+    {
+        mxDestroyArray(instanceMatrix);
+    }
 
 	return;
 }

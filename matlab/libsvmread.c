@@ -190,9 +190,9 @@ void mexFunction( int nlhs, mxArray *plhs[],
 {
 	if(nrhs == 1)
 	{
-		char filename[256];
+		char filename[1024];
 
-		mxGetString(prhs[0], filename, mxGetN(prhs[0]) + 1);
+		mxGetString(prhs[0], filename, 1024);
 
 		if(filename == NULL)
 		{
