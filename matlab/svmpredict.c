@@ -242,9 +242,9 @@ void mexFunction( int nlhs, mxArray *plhs[],
             char value[1024];
             int rtn;
             rtn=mxGetString(field, value, 1024);
-            if(0==_strcmpi(value,"probability")) {
+            if(0==strcmp(tolower(value),"probability")) {
                probEstimateFlag=1;     
-            } else if(0==_strcmpi(value,"decision")) {
+            } else if(0==strcmp(tolower(value),"decision")) {
                probEstimateFlag=0;     
             } else {
                 mexPrintf("Error: invalid output option.  'probability' or 'decision'\n");
