@@ -198,7 +198,7 @@ void mexFunction( int nlhs, mxArray *plhs[],
 	int probEstimateFlag = 0;
 	int output2 = 0;
 	struct svm_model *model;
-    const mxArray * instanceMatrix;
+    mxArray * instanceMatrix;
     mxArray ** predictLabels;
     mxArray ** outputMat;
     const char * error_msg;    
@@ -255,7 +255,7 @@ void mexFunction( int nlhs, mxArray *plhs[],
     }
     // preprocess instance matrix, make full transpose
 
-    instanceMatrix=prhs[0];
+    instanceMatrix=(mxArray*)prhs[0];
     // transpose instance matrix if sparse
     //mexPrintf("Input parsed\n");
 
@@ -289,7 +289,7 @@ void mexFunction( int nlhs, mxArray *plhs[],
 				return;
 			}
 		}
-        instanceMatrix=(const mxArray*)instanceMatrix_t;
+        instanceMatrix=instanceMatrix_t;
 	}
 
 
